@@ -1,0 +1,305 @@
+---
+title: "STA141B HW3"
+author: "Kwasie Agbemadon"
+date: "11/6/2020"
+output: word_document
+---
+
+This homework assignment is about collecting and analyzing data about baseball teams, records, winners, etc.
+
+Before I get to the questions, I will start by loading the database, using RSQLite and connecting it to the file. I will also load some of the tables in the database.
+```{r echo = F}
+library(RSQLite)
+library(ggplot2)
+baseball = dbConnect(SQLite(), 'lahman2013.sqlite')
+tables = dbListTables(baseball)
+batting = dbGetQuery(baseball, "SELECT * FROM Batting")
+teamdata = dbGetQuery(baseball, "SELECT * FROM Teams")
+master = dbGetQuery(baseball, "SELECT * FROM MASTER")
+managers = dbGetQuery(baseball, "SELECT * FROM Managers")
+salaries = dbGetQuery(baseball, "SELECT * FROM Salaries")
+appearances = dbGetQuery(baseball, "SELECT * FROM Appearances")
+fielding_post = dbGetQuery(baseball, "SELECT * FROM FieldingPost")
+pitching = dbGetQuery(baseball, "SELECT * FROM Pitching")
+pitching_post = dbGetQuery(baseball, "SELECT * FROM PitchingPost")
+schools = dbGetQuery(baseball, "SELECT * FROM Schools")
+collegiates = dbGetQuery(baseball, "SELECT * FROM SchoolsPlayers")
+series_post = dbGetQuery(baseball, "SELECT * FROM SeriesPost")
+```
+
+I used the head function to answer most of these questions, since there is too much data in the answers.
+
+1. What years does the data cover? Are there data for each of these years?
+
+For this one, I used dbGetQuery and had it obtain the years from the yearID column. I grouped it by year to avoid any duplicate elements.
+
+```{r echo = F}
+#1
+head(dbGetQuery(baseball, "SELECT yearID FROM teams GROUP BY yearID"))
+```
+
+This data covers the years 1871-2013. There is data for each year.
+
+2. How many (unique) people are included in the database? How many are players, managers, etc?
+
+I used the master and managers tables to answer this question, and selected the playerID from both tables to get the answer. I used the unique function as it removes all duplicate elements, and then enclose it inside the length function to return the amount of unique players and managers.
+
+```{r echo = F}
+#2
+master_ = unique(master$playerID)
+managers_ = unique(managers$playerID)
+length(master_)
+length(managers_)
+```
+
+There are 18,354 players and 682 managers in this database.
+
+3. How many players become managers?
+
+I used the length function to count each player. I used the %in% function as it extracts the elements of the Manager's playerID column that is also in the playerID column from the Master table.
+
+```{r echo = F}
+#3
+length(managers_ %in% master$playerID)
+```
+
+There are 682 players that became managers.
+
+4. How many players are there in each year, from 2000 to 2013? Do all teams have the same number of players?
+
+To answer the first sub-question, I used dbGetQuery and had it select the year and the amount of players from that year using the COUNT function. These variables come from the Appearances dataset. I then subsetted the data ranging from 2000 to 2013, grouping the data by year and then ordering the data by year. I did the same thing for the second sub-question but replaced yearID with teamID.
+
+```{r echo = F}
+#4a
+head(dbGetQuery(baseball, "SELECT yearID, COUNT(playerID) FROM APPEARANCES WHERE yearID BETWEEN 2000 and 2013 GROUP BY yearID ORDER BY yearID"))
+
+#4b
+head(dbGetQuery(baseball, "SELECT teamID, COUNT(playerID) FROM APPEARANCES WHERE yearID BETWEEN 2000 and 2013 GROUP BY teamID ORDER by teamID"))
+```
+
+All teams do not have the same number of players.
+
+5. What team won the World Series in 2010?  Include the name of the team, the league and division.
+
+I selected teamID, lgID, and divID from the Teams dataset then subsetted the yearID to 2010 and WSWin to Y (Yes). The same thing could also be done using the series_post dataset, and subsetting round to "WS", and yearID to 2010. Then, I could select lgIDwinner.
+```{r echo = F}
+#5
+dbGetQuery(baseball, "SELECT teamID, lgID, divID FROM Teams WHERE yearID == 2010 AND WSWin == 'Y'")
+```
+
+The SFN team won the World Series in 2010. Their league is NL and their division is W.
+
+6. What team lost the World Series each year? Again, include the name of the team, league, and division.
+
+I used the series_post dataset and selected the first three columns. I then added the divID column from the Teams dataset and used JOIN to merge the columns. "Round" was subsetted to "WS" and the data is grouped by year.
+
+Notice how in the data that all values in the divID column are "NA." The sport didn't start using divisions until 1969, but they are named on the full table,
+```{r echo = F}
+#6
+head(dbGetQuery(baseball, "SELECT sp.yearID, sp.teamIDloser, sp.lgIDloser, t.divID FROM SeriesPost as sp JOIN Teams as t ON sp.yearID = t.yearID WHERE sp.round == 'WS' GROUP BY sp.yearID"))
+```
+
+7. Compute the table of World Series winners for all years, again with the name of the team, league, and division.
+
+I simply did the same thing as the previous question, but I replaces the loser teams with the winner teams.
+```{r echo = F}
+#7
+head(dbGetQuery(baseball, "SELECT sp.yearID, sp.teamIDwinner, sp.lgIDwinner, t.divID FROM SeriesPost as sp JOIN Teams as t ON sp.yearID = t.yearID WHERE sp.round == 'WS' GROUP BY sp.yearID"))
+```
+
+8. Compute the table that has both the winner and runner-up for the World Series in each tuple/row for all years, again with the name of the team, league and division, and also the number games the losing team won in the series.
+
+To do this question, I used the SeriesPost dataset and the Teams dataset (for the names and divisions). I initialized those datasets as sp (SeriesPost), t1 (for the name of the winning team), and t2 (for the name of the losing team) I selected the needed columns then LEFT JOINED the Teams table based on the TeamIDs twice, because we need the winning and losing IDs to make it work. 
+```{r echo = F}
+#8
+head(dbGetQuery(baseball, "SELECT sp.yearID, sp.teamIDwinner, t1.name, sp.lgIDwinner, t1.divID, sp.teamIDloser, t2.name, sp.lgIDloser, t2.divID, sp.losses FROM SeriesPost as sp LEFT JOIN Teams as t1 ON sp.teamIDwinner = t1.teamID LEFT JOIN Teams as t2 ON sp.teamIDloser = t2.teamID WHERE sp.round == 'WS' GROUP BY sp.yearID ORDER by sp.yearID DESC"))
+```
+
+9. Do you see a relationship between the number of games won in a season and winning the World Series?
+
+I created two histograms: One is for World Series Winners and the other is for World Series Losers. The data for the histograms contained the amount of wins for all teams, where they both won and lost the World Series for every year. This was done by assigning the W (win) column from the Teams dataset, then subsetted the World Series wins using vector syntax and the which() function. Both histograms are color coded.
+```{r echo = F}
+#9
+par(mfrow = c(1,2))
+hist(teamdata$W[which(teamdata$WSWin == 'Y')], xlab = "No. of Wins", main = "Frequency of Wins", col = "red")
+hist(teamdata$W[which(teamdata$WSWin == 'N')], xlab = "No. of Losses", main = "Frequency of Losses", col = "blue")
+```
+
+From both of the histograms, there are no relationships to winning games and winning the World Series, as the histograms are nearly the same.
+
+10. In 2003, what were the three highest salaries? (We refer here to unique salaries, i.e., there maybe several players getting the exact same amount.) Find the players who got any of these 3 salaries with all of their details?
+
+I used the Salaries dataset and selected all columns where the year was 2003. I wanted to include the player's full name and their origin, so I grabbed that information from the master table and used the JOIN clause based on playerID. I then ordered the data by Salary, used DESC to start from the highest values, and limited the table to just 3 entries using LIMIT.
+```{r echo = F}
+#10
+dbGetQuery(baseball, "SELECT s.yearID, s.teamID, s.lgID, s.playerID,m.nameFirst, m.nameLast, m.birthCountry, s.salary FROM Salaries as s JOIN Master as m ON m.playerID = s.playerID WHERE yearID == 2003 ORDER BY salary DESC LIMIT 3")
+```
+
+Alex Rodriguez (rodrial01) from USA was the richest baseball player with $22M. He played for the Texas Rangers.
+
+Manny Ramirez (ramirma02) from Dominican Republic was the second richest with $20M. He played for the Boston Red Stockings.
+
+Carlos Delgado (delgaca01) from Puerto Rico was the third richest with $18.7M. He played for the Toronto Blue Jays.
+
+11. For 2010, compute the total payroll of each of the different teams. Next compute the team payrolls for all years in the database for which we have salary information. Display these in a plot.
+
+For a, I simply selected all columns of the Salaries table and added up the salaries for each team. I then subsetted yearID to only show information from 2010.
+
+For b, I made a new variable and added divisions from the Teams table, then joined Teams using LEFT JOIN and grouped the data by both the year and the team.
+
+For c, I used ggplot and plotted the year and the payroll together, and then grouped and colored the team names. ggplot automatically color codes the teams. I also added lines and points which represents the teams and years, respectfully.
+```{r echo = F}
+#11a
+head(dbGetQuery(baseball, "SELECT yearID, teamID, lgID, SUM(salary) FROM Salaries WHERE yearID == 2010 GROUP BY teamID"))
+
+#11b
+total_payroll = dbGetQuery(baseball, "SELECT s.yearID, s.teamID, s.lgID, t.divID, SUM(s.salary) FROM Salaries as s LEFT JOIN Teams as t ON s.teamID = t.teamID GROUP BY s.yearID, s.teamID")
+colnames(total_payroll) = c("Year", "Team", "League", "Division", "Total Payroll")
+
+#11c
+options(scipen = 9)
+ggplot(total_payroll, aes(Year, `Total Payroll`, group = Team, colour = Team)) + geom_line() + geom_point()
+```
+
+12. Explore the change in salary over time. Use a plot. Identify the teams that won the world series or league on the plot. How does salary relate to winning the league and/or world series.
+
+I plotted the the salaries based on the year, and color-coded the dots using ifelse() on the col parameter of plot() where it's only red when a team was won the World Series and/or the League at that year.
+```{r echo = F}
+#12
+#color code the dot where the team won
+options(scipen = 4)
+plot(salaries$yearID, salaries$salary, xlab = "Year", ylab = "Salary", main = "Salaries Throughout The Years", col = ifelse(teamdata$WSWin == 'Y' | teamdata$LgWin == 'Y', "red", "black"))
+```
+Salary relates to winning the World Series and/or league as it is based on the performance and progress of a team. Chances are there are more incoming players entering teams as well as skilled players that factor in the increase of salaries for those teams.
+
+13.  Compare payrolls for the teams that are in the same leagues, and then in the same divisions. Are there any interesting characteristics? Have certain teams always had top payrolls over the years? Is there a connection between payroll and performance?
+```{r echo = F}
+#13
+#Leagues
+head(total_payroll[which(total_payroll$League == "AL"),])
+head(total_payroll[which(total_payroll$League == "NL"),])
+
+#Divisions
+head(total_payroll[which(total_payroll$Division == 'C'),])
+head(total_payroll[which(total_payroll$Division == 'E'),])
+head(total_payroll[which(total_payroll$Division == 'W'),])
+```
+
+East Coast and Midwest baseball players in the AL league have higher salaries than teams from other regions of the country. Same applies to the NL league, except they are little bit behind on the AL league's salary progress.
+
+The KCA team has excelled on income given they were in the C division. The W division has one of the highest payrolls.
+
+14.  Which player has hit the most home runs?  Show the number per year.
+```{r echo = F}
+#14
+head(dbGetQuery(baseball, "SELECT playerID, HR, yearID from Batting ORDER BY HR DESC"))
+```
+
+16.  Do players who hit more home runs receive higher salaries?
+
+I created 2 separate graphs, one for Batters and one for Pitchers using the plot() function. I used both the batting and pitching datasets and used which() to select the players and salaries from the salary dataset that were in both said datasets. I then then plotted then both against each other.
+```{r echo = F}
+#16
+plot(batting$HR[which(salaries$playerID %in% batting$playerID)], salaries$salary[which(salaries$playerID %in% batting$playerID)], xlab = "Homeruns", ylab = "Salary Amount", main = "Homeruns and Higher Salaries (Batting)")
+plot(pitching$HR[which(salaries$playerID %in% batting$playerID)], salaries$salary[which(salaries$playerID %in% batting$playerID)], xlab = "Homeruns", ylab = "Salary Amount", main = "Homeruns and Higher Salaries (Pitching)")
+```
+From the graphs, it can be concluded that more homeruns do not result in higher salaries, regardless if they are a batter or a pitcher.
+
+17. Are certain baseball parks better for hitting home runs?
+
+Here, I used the Teams table and selected the park and the maximum amount of homeruns (using the max() function). I then grouped the data by the amount of maximum homeruns and ordered it descending.
+
+```{r echo = F}
+#17
+head(dbGetQuery(baseball, "SELECT park, sum(HR) FROM Teams GROUP BY HR ORDER BY sum(HR) DESC"))
+```
+Fenway Park II, Shibe Park, Yankee Stadium I, Braves Field, and Baker Bowl are best for home runs. 
+
+19. What pitchers have a large number of double or triple plays?  Again, give their details (names,team, year, ...).
+
+I made separate tables for both types of plays. I used the FieldingPost table and grabbed the playerID, team, league, year, and summed up the amount of double/triple plays each player received.
+```{r echo = F}
+#19
+head(dbGetQuery(baseball, "SELECT playerID, teamID, lgID, sum(DP), yearID from FieldingPost GROUP BY PlayerID ORDER BY sum(DP) DESC"))
+head(dbGetQuery(baseball, "SELECT playerID, teamID, lgID, sum(TP), yearID from FieldingPost GROUP BY PlayerID ORDER BY sum(TP) DESC"))
+```
+jeterde01, martiti02, olerujo01, garvest01, and pujolal01, and vizquom01 have large numbers of double plays.
+
+Only wambsbi01 has one triple play. Nobody else obtained any triple plays.
+
+20. How many games do pitchers start in a season?  Plot this against games finished in a season.
+
+I created a new query called "games," used the Pitching dataset, then selected the playerID, GS (Games Started), and GF (Games Finished) column. I then plotted the amount of games started against the amount of games finished.
+```{r echo = F}
+#20
+games = dbGetQuery(baseball, "SELECT playerID, GS, GF FROM Pitching")
+head(games)
+plot(games$GS, games$GF, xlab = "Games Started", ylab = "Games Finished", main = "Games Started vs. Games Finished")
+```
+Equally, there are pitchers that have started games without finishing them, and pitchers that didn't start games but finished alot of them. Some pitchers lean in-between the amounts.
+
+21. How many games do pitchers win in a season?
+
+I used two histograms: One for the Pitching dataset and the another for pitching during post-seasons. I used the hist() function to do this. I then selected the W (Win) column from both datasets and color-coded them.
+```{r echo = F}
+#21
+par(mfrow = c(1,2))
+hist(pitching$W, xlab = "Wins", ylab = "Frequency", main = "Wins From Pitchers", col = 'red')
+hist(pitching_post$W, xlab = "Wins", ylab = "Frequency", main = "Wins From Pitchers Post-Season", col = 'blue')
+```
+
+It turns out that there are only a small portion of Pitchers that win at least 5 games. For the post-season, the majority don't win any games.
+
+22.  How are wins related to hits, strikeouts, walks, homeruns and earned runs?
+
+I made datasets and graphs for each baseball asset using the Pitching dataset, because that set had all of the needed information. I then plotted each one.
+```{r echo = F}
+#22
+par(mfrow = c(2,2))
+win_hits = dbGetQuery(baseball, "SELECT playerID, W, H FROM Pitching")
+win_strikeout = dbGetQuery(baseball, "SELECT playerID, W, SO FROM Pitching")
+win_walks = dbGetQuery(baseball, "SELECT playerID, W, BB FROM Pitching")
+win_hr = dbGetQuery(baseball, "SELECT playerID, W, HR FROM Pitching")
+win_earnedruns = dbGetQuery(baseball, "SELECT playerID, W, ER FROM Pitching")
+plot(win_hits$H, win_hits$W, xlab = "Hits", ylab = "Wins", main = "Relationship of Wins and Hits")
+plot(win_strikeout$SO, win_strikeout$W, xlab = "Strikeouts", ylab = "Wins", main = "Relationship of Wins and Strikeouts")
+plot(win_hr$HR, win_hr$W, xlab = "Homeruns", ylab = "Wins", main = "Relationship of Wins and Homeruns")
+plot(win_earnedruns$ER, win_earnedruns$W, xlab = "Earned Runs", ylab = "Wins", main = "Relationship of Wins and Earned Runs")
+
+```
+
+Each one is related as more of these baseball tactics increases the chances of winning. Homeruns are the exception, as players achieved alot of wins with only a few homeruns and vice versa.
+
+23. What are the top ten collegiate producers of major league baseball players? How many colleges are represented in the database?
+
+I used the SchoolsPlayers dataset and selected both schoolID and counted schoolID (meaning the amount of players) using dbGetQuery, then grouped the data by schoolID and ordered the data by the amount of players starting from the highest amount. I then subsetted the table to only include the first 10 results.
+
+The second sub-question is easy, I just used the length() function to count the rows as all of the tuples are unique.
+```{r echo = F}
+#23
+dbGetQuery(baseball, "SELECT schoolID, COUNT(schoolID) FROM SchoolsPlayers GROUP BY schoolID ORDER BY COUNT(schoolID) DESC LIMIT 10")
+length(schools$schoolName)
+```
+
+For the amount of schools that are in the database, there are 749 represented.
+
+24. What players have pitched in the post season and also hit a home run in their career?
+
+Using the PitchingPost dataset, I grabbed the playerID's and made sure it took unique names using the DISTINCT clause. I added up the amount of homeruns each player hit during the post season and subsetted the data to include nonzero amounts of homeruns. I grouped the players and sorted the data by the amount of total homeruns starting by the highest amount.
+```{r echo = F}
+#24
+ps_players = dbGetQuery(baseball, "SELECT DISTINCT playerID, SUM(HR) FROM PitchingPost WHERE HR > 0 GROUP BY playerID ORDER BY SUM(HR) DESC")
+head(ps_players)
+dim(ps_players)[1]
+```
+
+About 871 players pitched and hit at least one homerun during the post season.
+
+The whole report is concluded by disconnecting the database.
+```{r echo = F}
+dbDisconnect(baseball)
+```
+
+Code appendix:
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
